@@ -1,0 +1,18 @@
+Things Installed on the Pi:
+
+By default:
+- NOOBS 3.1 (whatever shipped with my Pi kit from adafruit)
+
+Needed for camera multiplexer
+- wiringpi
+  `apt-get install wiringpi`
+- libopencv-dev
+   `apt-get install libopencv-dev`
+   
+Journey toward opency in python to make sure multiplexer works
+pip3 install opencv-contrib-python
+sudo apt-get install opencv-doc libatlas-base-dev libjasper-dev libqtgui4 python3-pyqt5
+sudo apt-get install python3-pyqt4
+pip3 uninstall opencv-contrib-python
+pip3 uninstall opencv-python
+
