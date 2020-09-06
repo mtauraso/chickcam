@@ -1,9 +1,18 @@
 #!/usr/bin/env python3
 
 import json
+import sys
+import os
 import subprocess
+
+import termios
+import tty
+
+from time import sleep
+
 import RPi.GPIO as GPIO
 import picamera 
+
 
 # TODO write into Object structure below
 # Load configuration
@@ -21,6 +30,17 @@ HEIGHT = 720 # Pixels
 # Encode params
 #KEYFRAME_INTERVAL = 60 # Frames per second (2 s interval)
 BITRATE = 4000000 # Bits/Second (4MBits/s) Twitch limit is 6 MBits/s
+
+
+# Python stdlib doesn't have this
+def getch():
+    fd = sys.stdin.fileno()
+    old = termios.tcgetattr(fd)
+    try:
+        tty.setraw(fd)
+        return sys.stdin.read(1)
+    finally:
+        termios.tcsetattr(fd, termios.TCSADRAIN, old)
 
 class ChickCam:
     def setup_multiplexer(self):
@@ -65,7 +85,8 @@ class ChickCam:
         return subprocess.Popen(stream_cmd, stdin=subprocess.PIPE)
 
     def start_camera(self):
-        return picamera.PiCamera(resolution=(WIDTH,HEIGHT), framerate=FPS)
+        self.camera = picamera.PiCamera(resolution=(WIDTH,HEIGHT), framerate=FPS)
+        return self.camera
 
 
     ## Interface to blinkenlights
@@ -79,26 +100,26 @@ class ChickCam:
             print("Already streaming")
         else:
             self.is_streaming = True
-            self.stream_pipe = self.start_twitch_pipe()
-            print("Opened pipe to twitch")
+            self.stream_proc = self.start_twitch_pipe()
+            print("Opened Streaming proc")
             self.camera = self.start_camera()
-            self.camera.start_recording(
-                    self.stream_pipe.stdin, 
-                    format="h264", 
-                    bitrate=BITRATE)
+            self.camera.start_recording(self.stream_proc.stdin, format="h264", bitrate=BITRATE)
+
             print("Started Streaming")
 
     # Stop streaming to twitch
     def stop_stream(self):
         if self.is_streaming:
             self.is_streaming = False
+
+            print("Stopping Recording")
             self.camera.stop_recording()
             self.camera.close()
-            print("Closed Camera")
-            self.stream_pipe.stdin.close()
+            print("Closing Stream Pipe")
+            self.stream_proc.stdin.close()
             print("Closed stream pipe")
-            self.stream_pipe.wait() # TODO: Should this be indefinite wait?
-            print("Streaming fully stopped")
+            self.stream_proc.wait()
+            print("Streaming Process dead")
         else:
             print("Not Streaming")
 
@@ -140,7 +161,7 @@ class ChickCam:
 
         self.camera.start_preview()
         sleep(2)
-        self.camera.stop_preview
+        self.camera.stop_preview()
 
         if not self.is_streaming:
             self.camera.close()
@@ -149,40 +170,41 @@ class ChickCam:
         print("")
         print(f"is_streaming = {self.is_streaming}")
         print(f"is_ir = {self.is_ir}")
-        #print(f"stream_pipe = {self.stream_pipe}")
-        #print(f"camera = {self.camera}")
         print("")
 
-from time import sleep
-import sys
-try:
-    cc = ChickCam()
+    def mainLoop(self):
+        try:
+            while True:
+                c = getch()
+                if c == 'c':
+                    print ('Switching Camera')
+                    cc.toggle_camera()
 
-    while True:
-        c = sys.stdin.read(1)
-        if c == 'c':
-            print ('Switching Camera')
-            cc.toggle_camera()
+                elif c == 's':
+                    print ('Toggling Stream')
+                    cc.toggle_stream()
 
-        elif c == 's':
-            print ('Toggling Stream')
-            cc.toggle_stream()
+                elif c == 'p':
+                    print ('2 second camera preview')
+                    cc.preview()
 
-        elif c == 'p':
-            print ('2 second camera preview')
-            cc.preview()
+                elif c == 'q':
+                    break;
 
-        elif c == 'q':
-            break;
+                else:
+                    continue;
 
-        else:
-            continue;
+                # Status to console once we make the change
+                cc.status()
+        except KeyboardInterrupt:
+            print("Keyboard interrupt, closing")
 
-        # Status to console once we make the change
-        cc.status()
 
-except KeyboardInterrupt:
-    print("Keyboard interrupt, closing")
-finally:
-    del cc
+# Make the App
+if __name__ == "__main__":
+    try:
+        cc = ChickCam()
+        cc.mainLoop()
+    finally:
+        del cc
 
