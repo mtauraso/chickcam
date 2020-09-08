@@ -171,10 +171,11 @@ class Streamer:
     # Overall Responsibility for a streaming process that can accept
     # Frames via its stream_pipe from a Camera
 
-    def __init__(self, fps):
+    def __init__(self, fps, mute = False):
         self.streaming = False
         self.streaming_proc = None
         self.fps = int(fps)
+        self.mute = mute
         
         passwords = None
         with open ('passwords.json') as f:
@@ -186,50 +187,55 @@ class Streamer:
     def stream_pipe(self):
         return None if not self.streaming_proc else self.streaming_proc.stdin
 
-    def start(self):
+    def start(self, mute = False):
         if self.streaming:
             return
-        # Capture video from stdin, send to twitch with no re-encode
-        # TODO: Audio gets muxed in here
-        stream_cmd = [ "/usr/bin/ffmpeg",
+        
+        self.mute = mute
+        audio_args = [
+                # Select Audio input from ALSA and the USB sound card
+                "-f", "alsa"
+                ,"-thread_queue_size", "128"
+                ,"-i", "default:CARD=Device"
 
+                # Audio Encoding (Raw audio is PCM/WAV)
+                ,"-codec:a", "aac"
+                ,"-ar", "48000" # Chose 48k to match microphone/sound card default
+                ,"-ab", "128k"  # 128k supposed to be CD quality audio
+
+                # Change the audio volume so we can hear the chicks
+                ,"-filter:a", "volume=7dB"
+                
+                # TODO: Tune high-pass filter to remove noise
+                # TODO: Shop for and tune other ffmpeg filters to clean up audio
+                #,"-filter_threads","6" # Set the processing threads for filters
+                # Both of these fit within Pi's performance
+                #,"-filter:a","volume=7dB,highpass"
+                #,"-filter:a","volume=7dB,afftdn"
+                
+        ] if not self.mute else []
+        
+        # Capture video from stdin, send to twitch with no re-encode
+        stream_cmd = [ "/usr/bin/ffmpeg",
                 # Controlling video capture
                 # FPS Setting. FFMPEG keeps each source on its own thread 
                 # and constructs its own timestamps?..? 
                 "-framerate", f"{self.fps}",
-                #"-threads","4",
 
                 # Video input is on STDIN.
                 "-thread_queue_size", "128", #Set a queue size of 128 packets for video
                 "-f", "h264", #force h264 so ff doesnt have to detect it
-                "-i", "-", # Input is from STDIN
-                
-                # Select Audio input from ALSA and the USB sound card
-                "-f", "alsa",
-                "-thread_queue_size", "128",
-                "-i", "default:CARD=Device",
-
-                # Audio Encoding (Raw audio is PCM/WAV)
-                "-codec:a", "aac",
-                "-ar", "48000", # Chose 48k to match microphone/sound card default
-                "-ab", "128k",  # 128k supposed to be CD quality audio
-
-                # Change the audio volume so we can hear the chicks
-                #"-filter:a", "volume=7dB,adeclick",
-                "-filter:a", "volume=7dB",
-                
-                # TODO: Tune high-pass filter to remove noise
-                # TODO: Shop for and tune other ffmpeg filters to clean up audio
-                #"-filter_threads","6",
-                #"-filter:a","volume=7dB,highpass",
-
+                "-i", "-" # Input is from STDIN
+        ]
+        stream_cmd += audio_args
+        stream_cmd += [
                 # Twitch output
                 "-use_wallclock_as_timestamps", "1", # Use wallclock timestamps 
                 "-flush_packets","1", # I think this will have better sync...
                 "-codec:v", "copy", # Don't re-encode
                 "-f", "flv", # Use FLV format
                 self.twitch_rtmp  # Use twitch url
-                ]
+        ]
         self.streaming_proc = subprocess.Popen(stream_cmd, 
                 stdin = subprocess.PIPE)
         self.streaming = True
@@ -279,8 +285,9 @@ class ChickCam:
     def __init__(self, start_stream = False, start_ir = False):
         # Always start stream as false and turn it on later
         self.is_streaming = False
+        self.is_muted = False
         self.camera = Camera(ChickCam.FPS)
-        self.streamer = Streamer(ChickCam.FPS)
+        self.streamer = Streamer(ChickCam.FPS, mute = self.is_muted)
         self.setup_multiplexer()
 
         if start_ir:
@@ -305,7 +312,7 @@ class ChickCam:
     ## Interface for GPIO switches
     # Begin streaming to twitch from current input
     def start_stream(self):
-        self.streamer.start()
+        self.streamer.start(mute = self.is_muted)
         self.camera.start(self.streamer.stream_pipe())
         self.is_streaming = True
         print("Started Streaming")
@@ -317,21 +324,16 @@ class ChickCam:
         self.is_streaming = False
         print("Stopped Streaming")
 
-    # switch to visual camera
-    def visual_camera(self):
-        if self.is_ir:
-            self.is_ir = False
-            self.switch_camera()
-        else:
-            print("Already on visual camera")
+    @contextmanager
+    def stream_off(self):
+        was_streaming = self.is_streaming
+        if was_streaming:
+            self.stop_stream()
 
-    # Switch to IR camera
-    def ir_camera(self):
-        if self.is_ir:
-            print("Already on IR camera")
-        else:
-            self.is_ir = True
-            self.switch_camera()
+        yield
+
+        if was_streaming:
+            self.start_stream()
 
     ## Interface for kbd test driver program
     def toggle_stream(self):
@@ -341,15 +343,18 @@ class ChickCam:
             self.start_stream()
 
     def toggle_camera(self):
-        if self.is_ir:
-            self.visual_camera()
-        else:
-            self.ir_camera()
+        self.is_ir = not self.is_ir
+        self.switch_camera()
+
+    def toggle_mute(self):
+        with self.stream_off():
+            self.is_muted = not self.is_muted
 
     def status(self):
         print("")
         print(f"is_streaming = {self.is_streaming}")
         print(f"is_ir = {self.is_ir}")
+        print(f"mute = {self.is_muted}")
         print("")
 
     def process_input(self):
@@ -363,6 +368,11 @@ class ChickCam:
         elif c == 's':
             print ('Toggling Stream')
             self.toggle_stream()
+            self.status()
+
+        elif c == 'm':
+            print ('Toggling Mute')
+            self.toggle_mute()
             self.status()
 
         elif c == 'p':
