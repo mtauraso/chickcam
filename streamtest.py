@@ -1,21 +1,10 @@
 #!/usr/bin/env python3
 
-import json
-import sys
-import os
-import subprocess
 
+# Python stdlib doesn't have this
 import termios
 import tty
 import fcntl
-
-
-from time import sleep
-
-import RPi.GPIO as GPIO
-import picamera 
-
-# Python stdlib doesn't have this
 def getch():
     fd = sys.stdin.fileno()
     old = termios.tcgetattr(fd)
@@ -28,6 +17,8 @@ def getch():
 from contextlib import contextmanager
 import threading
 import datetime
+import picamera 
+from time import sleep
 class Camera:
     # Overall frontend and lifecycle management of picamera
     # and any associated objects with similar lifecycles (update threads etc)
@@ -38,7 +29,7 @@ class Camera:
     WIDTH = 1280 # Pixels
     HEIGHT = 720 # Pixels
     KEYFRAME_SEC = 2 # 2 seconds
-    BITRATE = 4000000 # Bits/Second (4MBits/s) Twitch limit is 6 MBits/s
+    BITRATE = 4 * 1000000 # Bits/Second (4MBits/s) Twitch limit is 6 MBits/s
 
     def __init__(self, fps):
         self.started = False
@@ -170,7 +161,12 @@ class Camera:
 
         if was_started:
             self.start(old_stream_pipe)
-    
+
+
+#import os
+import subprocess
+import json
+
 class Streamer:
     # Overall Responsibility for a streaming process that can accept
     # Frames via its stream_pipe from a Camera
@@ -195,12 +191,47 @@ class Streamer:
             return
         # Capture video from stdin, send to twitch with no re-encode
         # TODO: Audio gets muxed in here
-        stream_cmd = [ "/usr/bin/ffmpeg", 
-                "-r", f"{self.fps}", # Set FPS to correct FFMPEGs monitor output
+        stream_cmd = [ "/usr/bin/ffmpeg",
+
+                # Controlling video capture
+                # FPS Setting. FFMPEG keeps each source on its own thread 
+                # and constructs its own timestamps?..? 
+                "-framerate", f"{self.fps}",
+                #"-threads","4",
+
+                # Video input is on STDIN.
+                "-thread_queue_size", "128", #Set a queue size of 128 packets for video
+                "-f", "h264", #force h264 so ff doesnt have to detect it
                 "-i", "-", # Input is from STDIN
-                "-codec", "copy", # Don't re-encode
-                "-f", "flv", self.twitch_rtmp] # Use FLV format and twitch url
-        self.streaming_proc = subprocess.Popen(stream_cmd, stdin=subprocess.PIPE)
+                
+                # Select Audio input from ALSA and the USB sound card
+                "-f", "alsa",
+                "-thread_queue_size", "128",
+                "-i", "default:CARD=Device",
+
+                # Audio Encoding (Raw audio is PCM/WAV)
+                "-codec:a", "aac",
+                "-ar", "48000", # Chose 48k to match microphone/sound card default
+                "-ab", "128k",  # 128k supposed to be CD quality audio
+
+                # Change the audio volume so we can hear the chicks
+                #"-filter:a", "volume=7dB,adeclick",
+                "-filter:a", "volume=7dB",
+                
+                # TODO: Tune high-pass filter to remove noise
+                # TODO: Shop for and tune other ffmpeg filters to clean up audio
+                #"-filter_threads","6",
+                #"-filter:a","volume=7dB,highpass",
+
+                # Twitch output
+                "-use_wallclock_as_timestamps", "1", # Use wallclock timestamps 
+                "-flush_packets","1", # I think this will have better sync...
+                "-codec:v", "copy", # Don't re-encode
+                "-f", "flv", # Use FLV format
+                self.twitch_rtmp  # Use twitch url
+                ]
+        self.streaming_proc = subprocess.Popen(stream_cmd, 
+                stdin = subprocess.PIPE)
         self.streaming = True
 
     def stop(self):
@@ -208,10 +239,15 @@ class Streamer:
             return
         print("Closing Stream Pipe")
         self.streaming_proc.stdin.close()
-        print("Closed stream pipe")
+        print("Sending sigterm to stream process")
+        self.streaming_proc.terminate()
         self.streaming_proc.wait()
+        print("Streaming process has died")
         self.streaming = False
 
+
+import sys
+import RPi.GPIO as GPIO
 class ChickCam:
     FPS = 30.0
 
@@ -261,7 +297,7 @@ class ChickCam:
         print("All Done")
 
     def flavorText(self):
-        return "Infared" if self.is_ir else "Visual"
+        return "Infrared" if self.is_ir else "Visual"
     
     ## Interface to blinkenlights
     ## TODO
@@ -352,7 +388,7 @@ class ChickCam:
 # Make the App
 if __name__ == "__main__":
     try:
-        cc = ChickCam(start_stream = True, start_ir = True )
+        cc = ChickCam(start_stream = True )
         cc.mainLoop()
     finally:
         cc.cleanup()
