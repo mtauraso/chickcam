@@ -129,4 +129,5 @@ dmypy.json
 .pyre/
 
 passwords.json
-
+testdata/
+ArduCam_*

@@ -3,22 +3,30 @@
 This has an app which streams baby chickens to twitch.
 
 ## Getting Started
-See Hardware and Software sections below to set up the Pi and install dependencies
-
-The main application is all in streamtest.py and is invoked by the headless_startup.sh script. The headless_startup script is designed to be run by rc.local on a standard RPi noobs install.
+See Hardware and Software sections below to set up the Pi and install dependencies. Pi needs to be configured for i2c, camera, and GPIO (future). Today if you would like to do headless control you need tmux and a way to get a terminal on the pi. 
 
 You need a file in the root directory of the checkout called `passwords.json` with a key called "twitch_stream_key" which will be used to access Twitch.tv. 
 
+The main application is all in streamtest.py and is invoked by the headless_startup.sh script. The headless_startup script is designed to be run by rc.local on a standard RPi noobs install.
+ 
 Control is via attaching to the tmux session started for the pi user and typing single character commands.
 * 'c' Change Camera using the Camera Multiplexer
 * 's' Start/Stop Streaming
 * 'q' Quit the camera program
+* 'p' 2 second camera preview on Pi's display (if plugged in)
 * 'm' Mute or unmute audio (This causes the stream to be fully stopped and started)
+
+## How the Software works
+Everything is in streamtest.py There are three main classes:
+* ChickCam Handles application state, keyboard control, camera multiplexer, setup & teardown during mode switches. The Camera Muiltiplexer uses 3 GPIO pins in this configuration and also needs i2c messages to switch properly.
+* Camera Handles the PiCamera class, which is also a [frontend for an h264 encoder hiding on the Pi's graphics card](https://picamera.readthedocs.io/en/release-1.13/fov.html#background-processes). Camera als hosts a thread which updates the annotation text to show the current date and app-defined text, which is used to indicate Mute status and which camera is in use.
+* Streamer runs and stops an ffmpeg process which does the heavy lifting of filtering and muxing in audio from the microphone and streaming the h264 video to twitch over Wifi. Video input to ffmpeg is over stdin (using subprocess.PIPE)
 
 ## Roadmap
 * SW: Separate classes from streamtest.py to separate files
-* SW: Add Switch control & indicator light functionality
-* HW: Add Battery pack
+* SW: Synchronize audio and video streams for better cheeps and pecks
+* HW/SW: Prototype switch & indicator LEDs for main functions in tmux management interface
+* HW: Add Battery pack for future outdoor operation
 * HW/SW: Add IR illumination in IR Mode
 * HW: Assemble board and accessories to a single integrated unit
 
@@ -32,9 +40,9 @@ Control is via attaching to the tmux session started for the pi user and typing 
 ## Software Required
 * *ffmpeg* Installed via apt-get, compilation took forever
 * *tmux* to run headless startup scripts
-
 * *alsa* for sound (free with NOOBS 3.1)
 * *python3* (free with NOOBS 3.1)
 * *pi camera python lib* (free with NOOBS 3.1)
 * *pi GPIO python lib* (free with NOOBS 3.1)
+
 
