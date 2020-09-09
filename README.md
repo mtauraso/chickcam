@@ -3,7 +3,7 @@
 This has an app which streams baby chickens to twitch.
 
 ## Getting Started
-See Hardware and Software sections below to set up the Pi and install dependencies. Pi needs to be configured for i2c, camera, and GPIO (future). Today if you would like to do headless control you need tmux and a way to get a terminal on the pi. 
+See Hardware and Software sections below to set up the Pi and install dependencies. Pi needs to be configured for i2c, camera, and GPIO. If you would like to do headless control you need tmux and a way to get a terminal on the pi. 
 
 You need a file in the root directory of the checkout called `passwords.json` with a key called "twitch_stream_key" which will be used to access Twitch.tv. 
 
@@ -25,10 +25,13 @@ Everything is in streamtest.py There are three main classes:
 ## Roadmap
 * SW: Separate classes from streamtest.py to separate files
 * SW: Synchronize audio and video streams for better cheeps and pecks
+* SW: Schedule automatic transitions of camera, muting, or stream on/offline
 * HW/SW: Prototype switch & indicator LEDs for main functions in tmux management interface
 * HW: Add Battery pack for future outdoor operation
-* HW/SW: Add IR illumination in IR Mode
 * HW: Assemble board and accessories to a single integrated unit
+* Design: Add IR illumination in IR Mode
+* SW: Fault detection and alarm on stream problems
+* SW: Live stream processing statistics in video overlay
 
 ## Hardware Setup
 * [Rasberry Pi 3bi with wifi](https://www.adafruit.com/product/3058)
