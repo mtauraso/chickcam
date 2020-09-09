@@ -29,7 +29,10 @@ class Camera:
     WIDTH = 1280 # Pixels
     HEIGHT = 720 # Pixels
     KEYFRAME_SEC = 2 # 2 seconds
-    BITRATE = 4 * 1000000 # Bits/Second (4MBits/s) Twitch limit is 6 MBits/s
+    # Twitch upper limit is 6 Mbps. Limiting factor here is audio processing on the pi
+    # We tune this to 3Mbps total, with 128Kbps reserved for audio
+    # Units below are Bits Per Second
+    BITRATE = 3 * (10**6) - 128 *(10**3) 
 
     def __init__(self, fps):
         self.started = False
@@ -192,6 +195,7 @@ class Streamer:
             return
         
         self.mute = mute
+
         audio_args = [
                 # Select Audio input from ALSA and the USB sound card
                 "-f", "alsa"
@@ -201,17 +205,20 @@ class Streamer:
                 # Audio Encoding (Raw audio is PCM/WAV)
                 ,"-codec:a", "aac"
                 ,"-ar", "48000" # Chose 48k to match microphone/sound card default
-                ,"-ab", "128k"  # 128k supposed to be CD quality audio
+                # 128k is CD quality audio. See notes on BANDWIDTH for audio/video 
+                # Bandwidth trade off
+                # TODO: Decouple Streamer & Camera Bandwidth calc my moving to app
+                ,"-ab", "128k"
 
-                # Change the audio volume so we can hear the chicks
-                ,"-filter:a", "volume=7dB"
                 
                 # TODO: Tune high-pass filter to remove noise
                 # TODO: Shop for and tune other ffmpeg filters to clean up audio
-                #,"-filter_threads","6" # Set the processing threads for filters
+                ,"-filter_threads","4" # Set the processing threads for filters
+                # Change the audio volume only so we can hear the chicks
+                #,"-filter:a", "volume=7dB"
                 # Both of these fit within Pi's performance
                 #,"-filter:a","volume=7dB,highpass"
-                #,"-filter:a","volume=7dB,afftdn"
+                ,"-filter:a", "highpass@frequency=1500,afftdn,volume=10dB"
                 
         ] if not self.mute else []
         
