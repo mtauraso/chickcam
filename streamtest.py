@@ -311,7 +311,9 @@ class ChickCam:
         print("All Done")
 
     def flavorText(self):
-        return "Infrared" if self.is_ir else "Visual"
+        cameraType = "Infrared" if self.is_ir else "Visual"
+        muting = " (Muted)" if self.is_muted else ""
+        return f"{cameraType}{muting}"
     
     ## Interface to blinkenlights
     ## TODO
@@ -320,6 +322,7 @@ class ChickCam:
     # Begin streaming to twitch from current input
     def start_stream(self):
         self.streamer.start(mute = self.is_muted)
+        self.camera.flavor_text = self.flavorText()
         self.camera.start(self.streamer.stream_pipe())
         self.is_streaming = True
         print("Started Streaming")
@@ -361,7 +364,7 @@ class ChickCam:
         print("")
         print(f"is_streaming = {self.is_streaming}")
         print(f"is_ir = {self.is_ir}")
-        print(f"mute = {self.is_muted}")
+        print(f"is_muted = {self.is_muted}")
         print("")
 
     def process_input(self):
