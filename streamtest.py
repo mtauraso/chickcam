@@ -217,7 +217,7 @@ class Streamer:
                 #,"-filter:a", "volume=7dB"
                 # Both of these fit within Pi's performance
                 #,"-filter:a","volume=7dB,highpass"
-                ,"-filter:a", "highpass@frequency=1500,afftdn,volume=10dB"
+                ,"-filter:a", "highpass@frequency=1500,highpass@frequency=1500,afftdn,volume=14dB"
                 
         ] if not self.mute else []
         
