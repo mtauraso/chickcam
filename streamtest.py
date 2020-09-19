@@ -30,9 +30,9 @@ class Camera:
     HEIGHT = 720 # Pixels
     KEYFRAME_SEC = 2 # 2 seconds
     # Twitch upper limit is 6 Mbps. Limiting factor here is audio processing on the pi
-    # We tune this to 3Mbps total, with 128Kbps reserved for audio
+    # We tune this to 2Mbps total, with 128Kbps reserved for audio
     # Units below are Bits Per Second
-    BITRATE = 3 * (10**6) - 128 *(10**3) 
+    BITRATE = 2 * (10**6) - 128 *(10**3) 
 
     def __init__(self, fps):
         self.started = False
