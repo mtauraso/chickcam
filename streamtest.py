@@ -135,7 +135,12 @@ class Camera:
             return
 
         if self.stream_pipe:
-            self.camera.stop_recording()
+            try:
+                self.camera.stop_recording()
+            # If the stream pipe is broken we will hit this
+            # ignore the broken pipe and continue teardown
+            except BrokenPipeError:
+                pass
             self.stream_pipe = None
 
         # Stop annotator writing to camera
@@ -189,6 +194,15 @@ class Streamer:
 
     def stream_pipe(self):
         return None if not self.streaming_proc else self.streaming_proc.stdin
+
+    # Return true if stream still alive
+    # Need to call this in an update loop and re-create stream if
+    # there is a network error
+    def is_live(self):
+        if self.streaming:
+            return self.streaming_proc.poll() == None
+        else:
+            return False
 
     def start(self, mute = False):
         if self.streaming:
@@ -399,6 +413,11 @@ class ChickCam:
     def mainLoop(self):
         try:
             while self.process_input():
+                if self.is_streaming and (not self.streamer.is_live()):
+                    print ("Detected Stream dead, reinitializing")
+                    self.toggle_stream()
+                    self.toggle_stream()
+
                 sleep(0.1)
 
         except KeyboardInterrupt:
