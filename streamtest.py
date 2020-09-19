@@ -1,19 +1,5 @@
 #!/usr/bin/env python3
 
-
-# Python stdlib doesn't have this
-import termios
-import tty
-import fcntl
-def getch():
-    fd = sys.stdin.fileno()
-    old = termios.tcgetattr(fd)
-    try:
-        tty.setraw(fd)
-        return sys.stdin.read(1)
-    finally:
-        termios.tcsetattr(fd, termios.TCSADRAIN, old)
-
 from contextlib import contextmanager
 import threading
 import datetime
@@ -171,7 +157,6 @@ class Camera:
             self.start(old_stream_pipe)
 
 
-#import os
 import subprocess
 import json
 
@@ -275,8 +260,13 @@ class Streamer:
 
 import sys
 import RPi.GPIO as GPIO
+import termios
+import tty
+import select
 class ChickCam:
     FPS = 30.0
+    SCHEDULE_EVAL_SEC = 300 # Only evaluate schedule (and reset user input) every 5 min
+    STREAM_CHECK_SEC = 10 # Every 10 sec we check streaming
 
     def setup_multiplexer(self):
         GPIO.setwarnings(False)
@@ -302,8 +292,99 @@ class ChickCam:
             GPIO.output(7, gpio_state[0])
             GPIO.output(11, gpio_state[1])
             GPIO.output(12, gpio_state[2])
-    
-    def __init__(self, start_stream = False, start_ir = False):
+   
+
+    def read_schedule(self):
+        self.schedule = None
+        
+        if self.schedule_file == None:
+            return
+
+        with open(self.schedule_file) as f:
+            self.schedule = json.load(f)
+
+    def eval_schedule(self):
+        # Only do this if we have a schedule
+        if self.schedule == None:
+            return
+
+        # Find current time
+        now_time = datetime.datetime.now()
+        
+        # Early return if not enough time has occurred since
+        # last we evaluated the schedule
+        if self.last_eval != None:
+            sec_since_last_eval = (now_time - self.last_eval).seconds
+            if sec_since_last_eval <= ChickCam.SCHEDULE_EVAL_SEC:
+                return
+
+        # We are evaluating
+        self.last_eval = now_time
+
+        # Go backward through schedule from current time until all vars are set
+        # First we prepare a list of keys which is unique, ordered, and includes the 
+        # current time
+        search_list = list(self.schedule.keys())
+        now_time_key = now_time.strftime('%H%M')
+        print(f"Evaluating schedule at {now_time_key}")
+        search_list.append(now_time_key)
+        search_set = set(search_list)
+        search_list = list(search_set)
+        search_list = sorted(search_list, reverse = True)
+
+        # We start our search at the current time
+        search_index = search_list.index(now_time_key)
+
+        is_ir = None
+        is_streaming = None
+        is_muted = None
+
+        while (is_ir == None) or (is_streaming == None) or (is_muted == None):
+            key_time = search_list[search_index]
+            config = self.schedule.get(key_time)
+            if config != None:
+                if is_ir == None:
+                    is_ir = config.get("is_ir")
+                    if is_ir != None:
+                        print(f"Schedule block {key_time} sets is_ir = {is_ir}")
+                if is_streaming == None:
+                    is_streaming = config.get("is_streaming")
+                    if is_streaming != None:
+                        print(f"Schedule block {key_time} sets is_streaming = {is_streaming}")
+                if is_muted == None:
+                    is_muted = config.get("is_muted")
+                    if is_muted != None:
+                        print(f"Schedule block {key_time} sets is_muted = {is_muted}")
+
+            search_index = (search_index + 1) % len(search_list)
+
+        changed = False
+
+        #print(f"Current sched is_ir = {is_ir}, is_streaming = {is_streaming}, is_muted = {is_muted}")
+
+        # Set streaming, muted, and ir state, calling relevant functions
+        if self.is_streaming != is_streaming:
+            print("Changing Streaming state to match schedule")
+            self.toggle_stream()
+            changed = True
+        
+        if self.is_muted != is_muted:
+            print("Changing Mute to match schedule")
+            self.toggle_mute()
+            changed = True
+        
+        if self.is_ir != is_ir:
+            print("Changing Camera to match schedule")
+            self.toggle_camera()
+            changed = True
+
+        # Print status if we changed anything
+        if changed:
+            self.status()
+
+
+
+    def __init__(self, start_stream = False, schedule = None):
         # Always start stream as false and turn it on later
         self.is_streaming = False
         self.is_muted = False
@@ -311,8 +392,13 @@ class ChickCam:
         self.streamer = Streamer(ChickCam.FPS, mute = self.is_muted)
         self.setup_multiplexer()
 
-        if start_ir:
-            self.ir_camera()
+        # Schedule tracking
+        self.schedule_file = schedule
+        self.read_schedule()
+
+        # Eval the schedule immediately
+        self.last_eval = None
+        self.eval_schedule()
 
         if start_stream:
             self.start_stream()
@@ -381,53 +467,80 @@ class ChickCam:
         print(f"is_muted = {self.is_muted}")
         print("")
 
-    def process_input(self):
-        c = getch()
-        
+    def process_input(self, c):
+
+        changed = False
+
         if c == 'c':
             print ('Switching Camera')
             self.toggle_camera()
-            self.status()
+            changed = True
 
         elif c == 's':
             print ('Toggling Stream')
             self.toggle_stream()
-            self.status()
+            changed = True
 
         elif c == 'm':
             print ('Toggling Mute')
             self.toggle_mute()
-            self.status()
+            changed = True
 
         elif c == 'p':
             print ('2 second camera preview')
             self.camera.preview(2)
             self.status()
 
+        elif c == 'r':
+            print ('Reloading schedule')
+            self.read_schedule()
+            # evaluate the reloaded schedule immediately
+            self.last_eval = None
+            self.eval_schedule()
+
         elif c == 'q':
             return False
+
+        # Each time the user makes a change push out
+        # future schedule evals
+        if changed:
+            self.status()
+            self.last_eval = datetime.datetime.now()
 
         return True
 
 
     def mainLoop(self):
         try:
-            while self.process_input():
+            old = termios.tcgetattr(sys.stdin)
+            tty.setcbreak(sys.stdin.fileno())
+
+            while True:
+                if select.select([sys.stdin], [], [], ChickCam.STREAM_CHECK_SEC) == ([sys.stdin],[],[]):
+                    if self.process_input(sys.stdin.read(1)):
+                        continue
+                    else:
+                        break
+
+                if self.schedule:
+                    self.eval_schedule()
+
                 if self.is_streaming and (not self.streamer.is_live()):
                     print ("Detected Stream dead, reinitializing")
                     self.toggle_stream()
                     self.toggle_stream()
 
-                sleep(0.1)
-
         except KeyboardInterrupt:
             print("Keyboard interrupt, closing")
+        finally:
+            termios.tcsetattr(sys.stdin, termios.TCSADRAIN, old)
 
 
 # Make the App
 if __name__ == "__main__":
     try:
-        cc = ChickCam(start_stream = True )
+        #cc = ChickCam(start_stream = True )
+        cc = ChickCam(schedule = "schedule.json")
         cc.mainLoop()
     finally:
         cc.cleanup()

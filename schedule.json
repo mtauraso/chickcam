@@ -1,0 +1,25 @@
+{
+	"0630":{
+		"is_streaming" : true,
+		"is_muted" : false,
+		"is_ir" : true
+	},
+
+	"0830":{
+		"is_muted" : true,
+		"is_ir" : false
+	},
+
+	"0900":{ "is_muted" : false },
+	"1130":{ "is_muted" : true },
+	"1300":{ "is_muted" : false },
+	
+	"1700":{ "is_muted" : true },
+	"1830":{ "is_muted" : false},
+
+	"2030":{ "is_ir" : true },
+
+	"2100":{ "is_streaming" : false}
+}
+
+

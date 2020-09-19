@@ -15,17 +15,19 @@ Control is via attaching to the tmux session started for the pi user and typing 
 * 'q' Quit the camera program
 * 'p' 2 second camera preview on Pi's display (if plugged in)
 * 'm' Mute or unmute audio (This causes the stream to be fully stopped and started)
+* 'r' Reload schedule config and apply the schedule immediately
+
+At startup streamtest also loads "schedule.json" which contains a schedule of streaming, camera choice, and mute function. The schedule is applied approximately every 5 minutes replacing whatever settings the user has keyed in.
 
 ## How the Software works
 Everything is in streamtest.py There are three main classes:
-* ChickCam Handles application state, keyboard control, camera multiplexer, setup & teardown during mode switches. The Camera Muiltiplexer uses 3 GPIO pins in this configuration and also needs i2c messages to switch properly.
+* ChickCam Handles application state, keyboard control, camera multiplexer, Scheduled changes, and object lifecycle during mode switches. The Camera Muiltiplexer uses 3 GPIO pins in this configuration and needs certain i2c messages to switch properly.
 * Camera Handles the PiCamera class, which is also a [frontend for an h264 encoder hiding on the Pi's graphics card](https://picamera.readthedocs.io/en/release-1.13/fov.html#background-processes). Camera als hosts a thread which updates the annotation text to show the current date and app-defined text, which is used to indicate Mute status and which camera is in use.
 * Streamer runs and stops an ffmpeg process which does the heavy lifting of filtering and muxing in audio from the microphone and streaming the h264 video to twitch over Wifi. Video input to ffmpeg is over stdin (using subprocess.PIPE)
 
 ## Roadmap
 * SW: Separate classes from streamtest.py to separate files
 * SW: Synchronize audio and video streams for better cheeps and pecks
-* SW: Schedule automatic transitions of camera, muting, or stream on/offline
 * HW/SW: Prototype switch & indicator LEDs for main functions in tmux management interface
 * HW: Add Battery pack for future outdoor operation
 * HW: Assemble board and accessories to a single integrated unit
